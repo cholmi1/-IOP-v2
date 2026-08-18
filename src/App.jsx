@@ -10,7 +10,7 @@ import {
   Sunrise, Sun, Sunset, Moon, TrendingUp, Share2, ShieldCheck, Shield, Info, ListChecks, Search,
   Lock, LogIn, LogOut, KeyRound, Mail, Phone, Flag, Globe, Monitor, FileText, Download,
   Building2, PackageCheck, Undo2, Link2, Unlink, BatteryLow, CircleAlert,
-  WifiOff, MessageSquare, CheckCheck, Timer, BellRing, Play, History, PhoneCall, ServerCog,
+  WifiOff, MessageSquare, CheckCheck, Timer, BellRing, Play, History, PhoneCall, ServerCog, Sparkles,
 } from "lucide-react";
 
 /* ============================================================
@@ -613,7 +613,7 @@ function FlucChart({ data, height = 130 }) {
         <ReferenceLine y={5} stroke={C.high} strokeDasharray="3 3" />
         <Tooltip contentStyle={{ borderRadius: 12, border: `1px solid ${C.line}`, fontSize: 12 }} formatter={(v) => [`${v} mmHg`, "일중 변동폭"]} />
         <Bar dataKey="fluc" radius={[3, 3, 0, 0]} barSize={12} isAnimationActive={false}>
-          {data.map((e, i) => <Cell key={i} fill={e.fluc >= 5 ? C.high : e.fluc >= 3.5 ? C.mid : C.primary} />)}
+          {data.map((e, i) => <Cell key={i} fill={e.fluc >= 5 ? C.high : e.fluc >= 2 ? C.mid : C.primary} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -850,139 +850,222 @@ function AuthScreen({ onAuth }) {
 /* ============================================================
    ★ 측정 패널 — 좌/우안 선택 후 측정
    ============================================================ */
-function EyeCard({ id, label, sub, on, onClick }) {
+/* ============================================================
+   안압 측정 패널 — 기기 신호 기반
+   CVT200은 좌·우를 분리한 신호로 전송하므로 사전 선택 없이
+   수신되는 대로 해당 눈의 슬롯이 채워진다. 값은 수기 수정 가능.
+   ============================================================ */
+const ampm = (hm) => {
+  if (!hm) return "";
+  const [h, m, s] = hm.split(":").map(Number);
+  const ap = h < 12 ? "오전" : "오후";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${ap} ${_pad(h12)}:${_pad(m)}${s != null && !isNaN(s) ? ":" + _pad(s) : ""}`;
+};
+function EyeValueSlot({ eye, label, target, value, onChange, receivedAt, live, manual }) {
+  const [edit, setEdit] = useState(false);
+  const [buf, setBuf] = useState("");
+  const has = value != null;
+  const st = !has ? C.grey : value <= target ? C.low : value <= target + 3 ? C.mid : C.high;
+  const commit = (raw) => {
+    const v = parseFloat(raw);
+    onChange(isNaN(v) ? null : +Math.min(80, Math.max(1, v)).toFixed(1));
+  };
+  const editing = manual || edit;
   return (
-    <div onClick={onClick} className="cursor-pointer flex flex-col items-center"
-      style={{ flex: 1, border: `1.5px solid ${on ? C.primary : C.line}`, background: on ? C.mint : "#fff", borderRadius: 14, padding: "13px 8px" }}>
-      <div className="flex items-center justify-center" style={{ width: 38, height: 38, borderRadius: 12, background: on ? "#fff" : C.bg, color: on ? C.primary : C.sub, marginBottom: 6 }}>
-        {id === "both" ? <div className="flex" style={{ gap: 1 }}><Eye size={14} /><Eye size={14} /></div> : <Eye size={19} />}
+    <div style={{ border: `1.5px solid ${live ? C.primary : has ? st + "45" : C.line}`, borderRadius: 14, padding: "12px 14px", background: live ? C.mint : "#fff" }}>
+      <div className="flex items-center justify-between" style={{ marginBottom: 5 }}>
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: eye === "od" ? C.od : C.os, padding: "2px 9px", borderRadius: 99 }}>{label}</span>
+          <span style={{ fontSize: 10, color: C.sub }}>목표 {target}</span>
+        </div>
+        {live ? (
+          <span className="flex items-center gap-1" style={{ fontSize: 10, fontWeight: 800, color: C.primary }}><RefreshCw size={10} className="animate-spin" /> 수신 중</span>
+        ) : manual ? (
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.gold }}>수기 입력</span>
+        ) : edit ? (
+          <span onClick={() => setEdit(false)} className="cursor-pointer" style={{ fontSize: 10, fontWeight: 700, color: C.sub }}>완료</span>
+        ) : (
+          <span onClick={() => { setBuf(has ? String(value) : ""); setEdit(true); }} className="cursor-pointer flex items-center gap-1" style={{ fontSize: 10, fontWeight: 700, color: C.low }}>
+            <Sparkles size={10} /> 수기 수정
+          </span>
+        )}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 800, color: on ? C.primary : C.ink }}>{label}</div>
-      <div style={{ fontSize: 10, color: C.sub, marginTop: 1 }}>{sub}</div>
+
+      {editing ? (
+        <input autoFocus={edit} type="number" step="0.1" min="1" max="80"
+          value={manual ? (has ? value : "") : buf}
+          onChange={(e) => { if (manual) commit(e.target.value); else setBuf(e.target.value); }}
+          onBlur={() => { if (!manual) { commit(buf); setEdit(false); } }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !manual) { commit(buf); setEdit(false); } }}
+          placeholder="0"
+          style={{ ...inp, fontSize: 30, fontWeight: 800, textAlign: "center", padding: "4px 8px", color: has ? st : C.ink, fontVariantNumeric: "tabular-nums" }} />
+      ) : (
+        <div className="flex items-baseline justify-center gap-1.5" style={{ padding: "3px 0" }}>
+          <span style={{ fontSize: 38, fontWeight: 800, color: has ? st : C.mintDeep, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>
+            {has ? value.toFixed(1) : "0"}
+          </span>
+          <span style={{ fontSize: 13, color: C.sub, fontWeight: 600 }}>mmHg</span>
+        </div>
+      )}
+
+      <div style={{ fontSize: 10.5, textAlign: "center", color: has ? st : C.grey, fontWeight: 600, marginTop: 3 }}>
+        {has ? (value > target ? `목표 +${(value - target).toFixed(1)} 초과` : "목표 이내")
+             : live ? "신호 수신 중" : manual ? "값을 입력하세요" : "대기 중"}
+        {receivedAt && !manual && <span style={{ color: C.sub, fontWeight: 500 }}> · {receivedAt}</span>}
+      </div>
     </div>
   );
 }
 function MeasurePanel({ onClose, onSave, targetOD, targetOS, baseOD }) {
-  const [eye, setEye] = useState("both");
-  const [mMode, setMMode] = useState("auto");
-  const [phase, setPhase] = useState(null); // 측정 중인 눈
-  const [pending, setPending] = useState(null);
-  const [mOD, setMOD] = useState(""); const [mOS, setMOS] = useState("");
-  const [mDate, setMDate] = useState(isoDate(new Date()));
-  const [mTime, setMTime] = useState(nowHM());
+  const now = new Date();
+  const [mDate, setMDate] = useState(isoDate(now));
+  const [mTime, setMTime] = useState(`${_pad(now.getHours())}:${_pad(now.getMinutes())}:${_pad(now.getSeconds())}`);
+  const [auto, setAuto] = useState(true);
+  const [live, setLive] = useState(null);
+  const [vals, setVals] = useState({ od: null, os: null });
+  const [recv, setRecv] = useState({ od: null, os: null });
+  const [log, setLog] = useState([]);
   const [ctx, setCtx] = useState("");
+  const [round, setRound] = useState(0);          // 재측정 시 증가
+  const timers = useRef([]);
   const CTX_OPTS = ["기상 직후", "점안 전", "점안 후", "운동 후", "저녁 식후", "취침 전"];
-  const noise = () => (Math.random() - 0.5) * 1.6;
+  const hasAny = vals.od != null || vals.os != null;
+  const bothDone = vals.od != null && vals.os != null;
 
-  const runAuto = () => {
-    const seq = eye === "both" ? ["od", "os"] : [eye];
-    const res = { od: null, os: null };
-    const step = (k) => {
-      if (k >= seq.length) {
-        setPhase(null);
-        setPending({ ...res, date: isoDate(new Date()), time: nowHM(), src: "auto", eye });
-        return;
-      }
-      setPhase(seq[k]);
-      setTimeout(() => {
-        res[seq[k]] = +((seq[k] === "od" ? baseOD : 15.4) + noise()).toFixed(1);
-        step(k + 1);
-      }, 1100);
-    };
-    step(0);
+  const clearAll = () => { timers.current.forEach(clearTimeout); timers.current = []; };
+  useEffect(() => () => clearAll(), []);
+
+  /* 자동측정 ON → 기기 신호를 계속 대기하다가 좌·우가 들어오는 대로 자동 반영.
+     실제 구현에서는 BLE characteristic notify 구독으로 대체한다. */
+  useEffect(() => {
+    clearAll();
+    setLive(null);
+    if (!auto) return;
+    const order = ["od", "os"].filter((e) => vals[e] == null);
+    if (!order.length) return;
+    const stamp = () => { const d = new Date(); return `${_pad(d.getHours())}:${_pad(d.getMinutes())}:${_pad(d.getSeconds())}`; };
+    order.forEach((eye, i) => {
+      timers.current.push(setTimeout(() => setLive(eye), 700 + i * 2100));
+      timers.current.push(setTimeout(() => {
+        const v = +((eye === "od" ? baseOD : 15.4) + (Math.random() - 0.5) * 1.6).toFixed(1);
+        const at = stamp();
+        setVals((o) => ({ ...o, [eye]: v }));
+        setRecv((o) => ({ ...o, [eye]: ampm(at) }));
+        setLog((l) => [{ eye, v, at: ampm(at), re: l.some((x) => x.eye === eye) }, ...l]);
+        setMTime(at);
+        setLive(null);
+      }, 1900 + i * 2100));
+    });
+    return clearAll;
+  }, [auto, round]);
+
+  const remeasure = () => { clearAll(); setVals({ od: null, os: null }); setRecv({ od: null, os: null }); setLive(null); setRound((r) => r + 1); };
+  const save = () => {
+    if (!hasAny) return;
+    const eye = bothDone ? "both" : vals.od != null ? "od" : "os";
+    onSave({ od: vals.od, os: vals.os, date: mDate, time: mTime.slice(0, 5), src: log.length ? "auto" : "manual", eye, ctx });
   };
-  const confirmManual = () => {
-    const od = eye === "os" ? null : parseFloat(mOD);
-    const os = eye === "od" ? null : parseFloat(mOS);
-    if ((eye !== "os" && isNaN(od)) || (eye !== "od" && isNaN(os))) return;
-    setPending({ od: od == null ? null : +od.toFixed(1), os: os == null ? null : +os.toFixed(1), date: mDate, time: mTime, src: "manual", eye });
-  };
-  const manualOK = (eye === "os" || mOD) && (eye === "od" || mOS);
 
   return (
-    <Card style={{ padding: 16, border: `1.5px solid ${C.mintDeep}` }}>
-      <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-        <span style={{ fontSize: 15, fontWeight: 800, color: C.ink }}>안압 측정</span>
+    <Card style={{ padding: 0, overflow: "hidden", border: `1.5px solid ${C.mintDeep}` }}>
+      <div className="flex items-center justify-between" style={{ padding: "13px 16px", borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex items-center gap-2">
+          <Gauge size={17} color={C.primary} />
+          <span style={{ fontSize: 15, fontWeight: 800, color: C.ink }}>안압 측정</span>
+        </div>
         <X size={20} color={C.sub} className="cursor-pointer" onClick={onClose} />
       </div>
 
-      {!pending && (
-        <>
-          {/* ① 측정할 눈 선택 */}
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.primary, marginBottom: 7 }}>① 측정할 눈을 선택하세요</div>
-          <div className="flex gap-2" style={{ marginBottom: 14 }}>
-            <EyeCard id="od" label="우안 OD" sub={`목표 ${targetOD}`} on={eye === "od"} onClick={() => setEye("od")} />
-            <EyeCard id="os" label="좌안 OS" sub={`목표 ${targetOS}`} on={eye === "os"} onClick={() => setEye("os")} />
-            <EyeCard id="both" label="양안" sub="우안 → 좌안" on={eye === "both"} onClick={() => setEye("both")} />
+      {/* 측정일 · 측정시간 */}
+      <div style={{ padding: "13px 16px", background: C.bg, borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 9 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.sub }}>측정일</span>
+          <input type="date" value={mDate} max={isoDate(new Date())} onChange={(e) => setMDate(e.target.value)}
+            style={{ ...inpSm, width: 158, textAlign: "center", fontWeight: 700 }} />
+        </div>
+        <div className="flex items-center justify-between">
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: C.sub, lineHeight: 1.35 }}>측정시간<br /><span style={{ fontSize: 10.5, fontWeight: 500 }}>(오전/오후 포함)</span></span>
+          <div className="flex flex-col items-end" style={{ gap: 3 }}>
+            <input type="time" step="1" value={mTime} onChange={(e) => setMTime(e.target.value)}
+              style={{ ...inpSm, width: 158, textAlign: "center", fontWeight: 700 }} />
+            <span style={{ fontSize: 11, fontWeight: 800, color: C.primary }}>{ampm(mTime)}</span>
           </div>
+        </div>
+      </div>
 
-          {/* ② 측정 방식 */}
-          <div style={{ fontSize: 12, fontWeight: 800, color: C.primary, marginBottom: 7 }}>② 측정 방식</div>
-          <div className="flex" style={{ background: "#fff", borderRadius: 12, padding: 3, border: `1px solid ${C.line}`, marginBottom: 14 }}>
-            {[{ id: "auto", t: "자동 측정" }, { id: "manual", t: "수동 입력" }].map((m) => (
-              <button key={m.id} onClick={() => setMMode(m.id)} className="cursor-pointer" style={{ flex: 1, border: "none", borderRadius: 10, padding: "8px 0", fontSize: 13, fontWeight: 700, fontFamily: FONT, background: mMode === m.id ? C.mint : "transparent", color: mMode === m.id ? C.primary : C.sub }}>{m.t}</button>
-            ))}
-          </div>
+      {/* 자동측정 토글 */}
+      <div className="flex items-center justify-between" style={{ padding: "11px 16px", borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex items-center gap-2">
+          <Bluetooth size={14} color={auto ? C.primary : C.grey} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: C.ink }}>자동측정</span>
+          <span style={{ fontSize: 10.5, color: auto ? C.primary : C.gold, fontWeight: 700 }}>
+            {auto ? (bothDone ? "측정 완료" : live ? `${live === "od" ? "우안" : "좌안"} 신호 수신 중` : "기기 신호 대기 중") : "수기 입력 모드"}
+          </span>
+        </div>
+        <div onClick={() => setAuto(!auto)} className="cursor-pointer flex items-center"
+          style={{ width: 46, height: 26, borderRadius: 99, background: auto ? C.primary : C.mintDeep, padding: 3, justifyContent: auto ? "flex-end" : "flex-start", transition: "all .15s" }}>
+          <span style={{ width: 20, height: 20, borderRadius: 99, background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+        </div>
+      </div>
 
-          {mMode === "auto" ? (
-            <div className="flex flex-col items-center" style={{ padding: "6px 0 4px" }}>
-              {phase ? (
-                <>
-                  <div className="flex items-center justify-center" style={{ width: 72, height: 72, borderRadius: 999, background: C.mint, marginBottom: 12 }}><RefreshCw size={34} color={C.primary} className="animate-spin" /></div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: C.primary }}>{phase === "od" ? "우안(OD)" : "좌안(OS)"} 측정 중…</div>
-                  <div style={{ fontSize: 11.5, color: C.sub, marginTop: 3 }}>CVT200을 {phase === "od" ? "오른쪽" : "왼쪽"} 눈에 맞추고 기다려 주세요.</div>
-                  {eye === "both" && (
-                    <div className="flex items-center gap-2" style={{ marginTop: 12 }}>
-                      {["od", "os"].map((e) => (
-                        <span key={e} style={{ fontSize: 11, fontWeight: 800, padding: "4px 12px", borderRadius: 999, background: phase === e ? C.primary : C.mint, color: phase === e ? "#fff" : C.sub }}>{e === "od" ? "1. 우안" : "2. 좌안"}</span>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-center" style={{ width: 72, height: 72, borderRadius: 999, background: C.mint, marginBottom: 12 }}><Gauge size={34} color={C.primary} /></div>
-                  <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 14, textAlign: "center", lineHeight: 1.5 }}>
-                    <b style={{ color: C.primary }}>{EYE_LABEL[eye]}</b>{eye === "both" ? " (우안 먼저 측정 후 좌안)" : ""} 측정을 시작합니다.<br />CVT200을 준비한 뒤 아래 버튼을 누르세요.
-                  </div>
-                  <button onClick={runAuto} className="cursor-pointer" style={{ border: "none", borderRadius: 13, padding: "13px 30px", background: C.primary, color: "#fff", fontWeight: 800, fontSize: 14.5, fontFamily: FONT }}>{EYE_LABEL[eye]} 측정 시작</button>
-                </>
+      {/* 현재 입력/측정치 */}
+      <div style={{ padding: "14px 16px" }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: C.ink }}>현재 입력/측정치</span>
+          {auto
+            ? <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: C.low }}><Sparkles size={11} /> 수기 수정 가능</span>
+            : <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: C.gold }}><Sparkles size={11} /> 좌·우 직접 입력</span>}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <EyeValueSlot eye="od" label="우안 OD" target={targetOD} value={vals.od} live={live === "od"} receivedAt={recv.od} manual={!auto}
+            onChange={(v) => setVals((o) => ({ ...o, od: v }))} />
+          <EyeValueSlot eye="os" label="좌안 OS" target={targetOS} value={vals.os} live={live === "os"} receivedAt={recv.os} manual={!auto}
+            onChange={(v) => setVals((o) => ({ ...o, os: v }))} />
+        </div>
+
+        <div className="flex items-center justify-center gap-2" style={{ marginTop: 11 }}>
+          {auto ? (
+            <>
+              <span style={{ fontSize: 10.5, color: C.sub, lineHeight: 1.5, textAlign: "center" }}>
+                {bothDone ? "좌·우 측정이 모두 반영되었습니다. 값을 확인하고 저장하세요."
+                          : "CVT200을 눈에 맞추면 좌·우가 자동으로 구분되어 위 칸에 반영됩니다."}
+              </span>
+              {hasAny && (
+                <span onClick={remeasure} className="cursor-pointer flex items-center gap-1 flex-shrink-0" style={{ fontSize: 11, fontWeight: 800, color: C.primary }}>
+                  <RefreshCw size={11} /> 다시 측정
+                </span>
               )}
-            </div>
+            </>
           ) : (
-            <div className="flex flex-col gap-3">
-              <div className="flex gap-2.5">
-                {eye !== "os" && <Field label="우안 OD (mmHg)"><input type="number" step="0.1" min="5" max="50" value={mOD} onChange={(e) => setMOD(e.target.value)} placeholder="예: 17.2" style={inp} /></Field>}
-                {eye !== "od" && <Field label="좌안 OS (mmHg)"><input type="number" step="0.1" min="5" max="50" value={mOS} onChange={(e) => setMOS(e.target.value)} placeholder="예: 15.6" style={inp} /></Field>}
-              </div>
-              <div className="flex gap-2.5">
-                <Field label="측정 날짜"><input type="date" value={mDate} max={isoDate(new Date())} onChange={(e) => setMDate(e.target.value)} style={inp} /></Field>
-                <Field label="측정 시간"><input type="time" value={mTime} onChange={(e) => setMTime(e.target.value)} style={inp} /></Field>
-              </div>
-              <button onClick={confirmManual} disabled={!manualOK} className="cursor-pointer" style={{ border: "none", borderRadius: 13, padding: "13px 0", background: manualOK ? C.primary : C.mintDeep, color: "#fff", fontWeight: 800, fontSize: 14.5, fontFamily: FONT }}>입력값 확인</button>
-            </div>
+            <span style={{ fontSize: 10.5, color: C.sub, lineHeight: 1.5, textAlign: "center" }}>
+              병원에서 측정한 값이나 다른 기기의 값을 직접 기록합니다. 한쪽만 입력해도 저장됩니다.
+            </span>
           )}
-        </>
-      )}
+        </div>
 
-      {pending && (
-        <div className="flex flex-col gap-3">
-          <div style={{ fontSize: 12.5, color: C.sub, fontWeight: 700 }}>
-            {EYE_LABEL[pending.eye]} 측정 완료 · <span style={{ color: pending.src === "auto" ? C.primary : C.gold }}>{pending.src === "auto" ? "자동(CVT200)" : "수동 입력"}</span>
-          </div>
-          <div className={pending.eye === "both" ? "grid grid-cols-2 gap-2.5" : "grid grid-cols-1 gap-2.5"}>
-            {[{ e: "우안 OD", v: pending.od, t: targetOD }, { e: "좌안 OS", v: pending.os, t: targetOS }].filter((p) => p.v != null).map((p) => {
-              const st = p.v <= p.t ? C.low : p.v <= p.t + 3 ? C.mid : C.high;
-              return (
-                <div key={p.e} style={{ border: `1px solid ${C.line}`, borderRadius: 13, padding: "12px 14px" }}>
-                  <div style={{ fontSize: 11.5, color: C.sub, fontWeight: 700 }}>{p.e}</div>
-                  <div className="flex items-baseline gap-1"><span style={{ fontSize: 28, fontWeight: 800, color: st }}>{p.v.toFixed(1)}</span><span style={{ fontSize: 11, color: C.sub }}>mmHg</span></div>
-                  <div style={{ fontSize: 10.5, color: st, fontWeight: 600 }}>목표 {p.t} · {p.v > p.t ? `+${(p.v - p.t).toFixed(1)} 초과` : "이내"}</div>
+        {/* 기기 수신 이력 */}
+        {auto && log.length > 0 && (
+          <div style={{ marginTop: 12, paddingTop: 11, borderTop: `1px solid ${C.line}` }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6 }}>기기 수신 이력</div>
+            <div className="flex flex-col gap-1">
+              {log.slice(0, 4).map((r, i) => (
+                <div key={i} className="flex items-center gap-2" style={{ fontSize: 11 }}>
+                  <span style={{ fontWeight: 800, color: "#fff", background: r.eye === "od" ? C.od : C.os, padding: "1px 7px", borderRadius: 99, fontSize: 9.5 }}>{r.eye === "od" ? "우안" : "좌안"}</span>
+                  <span style={{ fontWeight: 800, color: C.ink, fontVariantNumeric: "tabular-nums" }}>{r.v.toFixed(1)}</span>
+                  <span style={{ color: C.sub }}>mmHg</span>
+                  {r.re && <span style={{ fontSize: 9.5, fontWeight: 700, color: C.mid, background: C.midSoft, padding: "1px 6px", borderRadius: 99 }}>재측정 갱신</span>}
+                  <span style={{ color: C.grey, marginLeft: "auto" }}>{r.at}</span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-          <div>
+        )}
+
+        {/* 측정 상황 */}
+        {hasAny && (
+          <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 6 }}>측정 상황 (선택)</div>
             <div className="flex flex-wrap" style={{ gap: 5 }}>
               {CTX_OPTS.map((o) => (
@@ -991,13 +1074,21 @@ function MeasurePanel({ onClose, onSave, targetOD, targetOS, baseOD }) {
               ))}
             </div>
           </div>
-          <div style={{ fontSize: 11.5, color: C.sub }}>측정 시각 · {pending.date} {pending.time}</div>
-          <div className="flex gap-2.5">
-            <button onClick={() => setPending(null)} className="cursor-pointer flex items-center justify-center gap-1.5" style={{ width: 120, border: `1.5px solid ${C.line}`, background: "#fff", color: C.high, borderRadius: 13, padding: "13px 0", fontSize: 14, fontWeight: 700, fontFamily: FONT }}><Trash2 size={15} /> 다시 측정</button>
-            <button onClick={() => onSave({ ...pending, ctx })} className="cursor-pointer" style={{ flex: 1, border: "none", background: C.primary, color: "#fff", borderRadius: 13, padding: "13px 0", fontSize: 15, fontWeight: 800, fontFamily: FONT }}>저장</button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* 취소 · 저장 */}
+      <div className="flex gap-2.5" style={{ padding: "0 16px 16px" }}>
+        <button onClick={onClose} className="cursor-pointer flex items-center justify-center gap-1.5"
+          style={{ flex: 1, border: `1.5px solid ${C.high}45`, background: "#fff", color: C.high, borderRadius: 13, padding: "13px 0", fontSize: 14.5, fontWeight: 800, fontFamily: FONT }}>
+          <X size={16} /> 취소
+        </button>
+        <button onClick={save} disabled={!hasAny} className="cursor-pointer flex items-center justify-center gap-1.5"
+          style={{ flex: 1.4, border: "none", background: hasAny ? C.low : C.mintDeep, color: "#fff", borderRadius: 13, padding: "13px 0", fontSize: 15, fontWeight: 800, fontFamily: FONT }}>
+          <Check size={17} strokeWidth={3} /> 저장
+        </button>
+      </div>
+      {!hasAny && <div style={{ fontSize: 10.5, color: C.sub, textAlign: "center", padding: "0 16px 14px", marginTop: -8 }}>측정값이 하나 이상 있어야 저장할 수 있습니다.</div>}
     </Card>
   );
 }
@@ -1106,7 +1197,7 @@ function HomeScreen({ account, sessions, targetOD, targetOS, go, upcoming, overd
         </div>
         <div className="grid grid-cols-3 gap-2">
           {[
-            { l: "일중 변동폭", v: flucOD, u: "mmHg", c: flucOD >= 5 ? C.high : flucOD >= 3.5 ? C.mid : C.low },
+            { l: "일중 변동폭", v: flucOD, u: "mmHg", c: flucOD >= 5 ? C.high : flucOD >= 2 ? C.mid : C.low },
             { l: "목표 초과", v: overCnt, u: `/ ${sessions.length}회`, c: overCnt ? C.high : C.low },
             { l: "예정 측정", v: schedule.length, u: "회/일", c: C.primary },
           ].map((k) => (
@@ -1169,7 +1260,7 @@ function MeasureScreen({ sessions, setSessions, targetOD, targetOS, schedule, up
           <div className="flex items-center gap-3">
             <div className="flex-1">
               <div style={{ fontSize: 13.5, fontWeight: 800, color: C.ink }}>지금 측정하기</div>
-              <div style={{ fontSize: 11.5, color: C.sub, marginTop: 2, lineHeight: 1.5 }}>우안·좌안·양안 중 선택해 측정합니다. 한쪽만 측정해도 기록됩니다.</div>
+              <div style={{ fontSize: 11.5, color: C.sub, marginTop: 2, lineHeight: 1.5 }}>CVT200이 좌·우를 자동으로 구분해 전송합니다. 한쪽만 측정해도 기록됩니다.</div>
             </div>
             <button onClick={() => setOpen(true)} className="flex items-center gap-2 cursor-pointer"
               style={{ border: "none", borderRadius: 14, padding: "12px 18px", background: C.primary, color: "#fff", fontWeight: 800, fontSize: 14, fontFamily: FONT }}><Gauge size={17} /> 측정</button>
@@ -1211,7 +1302,7 @@ function MeasureScreen({ sessions, setSessions, targetOD, targetOS, schedule, up
       </Card>
 
       <div style={{ fontSize: 10.5, color: C.sub, lineHeight: 1.55, background: C.mint, borderRadius: 12, padding: "10px 12px" }}>
-        <b style={{ color: C.primary }}>측정 팁:</b> 양안 측정 시 우안(OD)을 먼저 재고 이어서 좌안(OS)을 잽니다. 측정 전 5분 이상 안정을 취하고 목을 조이는 옷은 풀어 주세요.
+        <b style={{ color: C.primary }}>측정 팁:</b> 좌·우 구분은 기기가 자동으로 판별하므로 순서는 상관없습니다. 측정 전 5분 이상 안정을 취하고 목을 조이는 옷은 풀어 주세요.
       </div>
     </div>
   );
@@ -1251,7 +1342,7 @@ function RecordScreen({ targetOD, targetOS }) {
           { l: "우안 평균", v: stat.odMean, u: "mmHg", c: stat.odMean > targetOD ? C.high : C.od, sub: `목표 ${targetOD}` },
           { l: "좌안 평균", v: stat.osMean, u: "mmHg", c: stat.osMean > targetOS ? C.high : C.os, sub: `목표 ${targetOS}` },
           { l: "목표 초과일", v: `${stat.overPct}%`, u: "", c: stat.overPct > 30 ? C.high : stat.overPct > 15 ? C.mid : C.low, sub: `${stat.overDays}일 / ${pts.length}일` },
-          { l: "평균 일중 변동", v: stat.flucAvg, u: "mmHg", c: stat.flucAvg >= 5 ? C.high : stat.flucAvg >= 3.5 ? C.mid : C.low, sub: "5 이상 주의" },
+          { l: "평균 일중 변동", v: stat.flucAvg, u: "mmHg", c: stat.flucAvg >= 5 ? C.high : stat.flucAvg >= 2 ? C.mid : C.low, sub: "2 미만 안정 · 5 이상 주의" },
         ].map((k) => (
           <Card key={k.l} style={{ padding: "12px 14px" }}>
             <div style={{ fontSize: 11, color: C.sub, fontWeight: 700 }}>{k.l}</div>
@@ -1284,7 +1375,7 @@ function RecordScreen({ targetOD, targetOS }) {
         <SectionTitle icon={TrendingUp}>일중 변동폭 (최대 − 최소)</SectionTitle>
         <FlucChart data={pts} height={140} />
         <div className="flex items-center gap-4 flex-wrap" style={{ marginTop: 6 }}>
-          <Legend c={C.primary} t="3.5 미만" /><Legend c={C.mid} t="3.5–5" /><Legend c={C.high} t="5 이상" />
+          <Legend c={C.primary} t="2 미만" /><Legend c={C.mid} t="2–5" /><Legend c={C.high} t="5 이상" />
         </div>
       </Card>
 
@@ -1494,6 +1585,68 @@ const TABS = [
   { id: "record", label: "기록", icon: Activity },
   { id: "settings", label: "설정", icon: Settings },
 ];
+
+/* ---------- 환자 앱 알림 패널 ---------- */
+function buildNotices({ upcoming, overdue, rent }) {
+  const out = [];
+  (overdue || []).forEach((m) => out.push({
+    id: `late-${m.time}`, icon: AlertTriangle, c: C.high, bg: C.highSoft, tab: "measure",
+    title: "측정 시간이 지났습니다", body: `${m.time} 예정 측정이 ${m.late}분 경과했습니다.`, tag: "측정",
+  }));
+  (upcoming || []).forEach((m) => out.push({
+    id: `soon-${m.time}`, icon: Bell, c: C.mid, bg: C.midSoft, tab: "measure",
+    title: "곧 측정 시간입니다", body: `${m.time} 예정 · ${m.diff}분 후`, tag: "측정",
+  }));
+  if (rent) out.push({
+    id: `rent-${rent.key}`, icon: rent.icon, c: rent.c, bg: rent.bg, tab: "settings",
+    title: rent.title, body: rent.msg, tag: "기기",
+  });
+  return out;
+}
+function NoticePanel({ notices, onClose, onGo }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 45 }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(10,42,49,.35)" }} />
+      <div style={{ position: "absolute", top: 74, left: 14, right: 14, maxHeight: 560, overflowY: "auto",
+                    background: "#fff", borderRadius: 18, border: `1px solid ${C.line}`, boxShadow: "0 22px 50px -14px rgba(8,52,62,.45)" }}>
+        <div className="flex items-center justify-between" style={{ padding: "13px 16px", borderBottom: `1px solid ${C.line}`, background: C.bg, position: "sticky", top: 0 }}>
+          <div className="flex items-center gap-1.5">
+            <Bell size={15} color={C.primary} />
+            <span style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>알림</span>
+            <span style={{ fontSize: 11.5, color: C.sub }}>{notices.length}건</span>
+          </div>
+          <X size={19} color={C.sub} className="cursor-pointer" onClick={onClose} />
+        </div>
+        {notices.length === 0 ? (
+          <div className="flex flex-col items-center" style={{ padding: "44px 20px", color: C.sub }}>
+            <div className="flex items-center justify-center" style={{ width: 52, height: 52, borderRadius: 999, background: C.lowSoft, color: C.low, marginBottom: 12 }}><Check size={24} strokeWidth={3} /></div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>새 알림이 없습니다</div>
+            <div style={{ fontSize: 12, marginTop: 4, textAlign: "center", lineHeight: 1.5 }}>측정 일정과 기기 상태가 모두 정상입니다.</div>
+          </div>
+        ) : notices.map((n, i) => (
+          <div key={n.id} onClick={() => { onGo(n.tab); onClose(); }} className="cursor-pointer flex items-start gap-3"
+            style={{ padding: "13px 16px", borderBottom: i < notices.length - 1 ? `1px solid ${C.line}` : "none" }}>
+            <div className="flex items-center justify-center flex-shrink-0" style={{ width: 36, height: 36, borderRadius: 11, background: n.bg, color: n.c }}><n.icon size={17} /></div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span style={{ fontSize: 9.5, fontWeight: 800, color: n.c, background: n.bg, padding: "1px 7px", borderRadius: 99 }}>{n.tag}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: C.ink }}>{n.title}</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.sub, marginTop: 3, lineHeight: 1.45 }}>{n.body}</div>
+            </div>
+            <ChevronRight size={16} color={C.grey} className="flex-shrink-0" style={{ marginTop: 9 }} />
+          </div>
+        ))}
+        {notices.length > 0 && (
+          <div style={{ padding: "11px 16px", background: C.bg, fontSize: 10.5, color: C.sub, lineHeight: 1.5 }}>
+            알림을 누르면 해당 화면으로 이동합니다. 푸시 알림은 <b style={{ color: C.primary }}>설정</b>에서 켜고 끌 수 있습니다.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PatientApp() {
   const [account, setAccount] = useState(null);
   const [tab, setTab] = useState("home");
@@ -1504,11 +1657,13 @@ function PatientApp() {
   const [nowMin, setNowMin] = useState(() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); });
   useEffect(() => { const id = setInterval(() => { const d = new Date(); setNowMin(d.getHours() * 60 + d.getMinutes()); }, 60000); return () => clearInterval(id); }, []);
   const [rentTo, setRentTo] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return isoDate(d); });
+  const [noticeOpen, setNoticeOpen] = useState(false);
   const { upcoming, overdue } = measureAlerts(schedule, sessions, nowMin);
   const isRental = !!account && (account.owner || "기관") === "기관" && !!account.serial;
   const rent = isRental ? rentAlert(rentTo, isoDate(new Date())) : null;
   const push = useIopPush(upcoming, overdue, rent);
-  const alertCount = upcoming.length + overdue.length + (rent ? 1 : 0);
+  const notices = buildNotices({ upcoming, overdue, rent });
+  const alertCount = notices.length;
 
   return (
     <div style={{ width: 380, maxWidth: "100%", height: 800, background: C.bg, borderRadius: 40, border: "10px solid #10262B", overflow: "hidden", position: "relative", boxShadow: "0 30px 70px -30px rgba(8,52,62,.5)" }}>
@@ -1531,7 +1686,7 @@ function PatientApp() {
                 <div style={{ fontSize: 9.5, color: C.sub, letterSpacing: "0.05em" }}>CVT200 · 안압 전용 관리</div>
               </div>
             </div>
-            <div className="cursor-pointer" style={{ position: "relative" }} onClick={() => setTab("measure")}>
+            <div className="cursor-pointer" style={{ position: "relative" }} onClick={() => setNoticeOpen(true)}>
               <Bell size={20} color={alertCount ? C.high : C.sub} />
               {alertCount > 0 && <span className="flex items-center justify-center" style={{ position: "absolute", top: -5, right: -6, minWidth: 15, height: 15, padding: "0 3px", borderRadius: 99, background: C.high, color: "#fff", fontSize: 9.5, fontWeight: 800 }}>{alertCount}</span>}
             </div>
@@ -1554,6 +1709,7 @@ function PatientApp() {
               );
             })}
           </div>
+          {noticeOpen && <NoticePanel notices={notices} onClose={() => setNoticeOpen(false)} onGo={setTab} />}
         </>
       )}
     </div>
@@ -1897,7 +2053,7 @@ const MEAS_ROWS = [
   { at: "2026-07-02 07:20", dev: "CVT200 HOME", eye: "좌안", od: null, os: 16.1, qod: "-", qos: "양호", src: "자동" },
   { at: "2026-07-01 07:35", dev: "CVT200 HOME", eye: "양안", od: 18.3, os: 16.6, qod: "양호", qos: "우수", src: "자동" },
 ];
-function PatientDetail({ p, role, onBack, devices, setDevices, patients, sent, onSend }) {
+function PatientDetail({ p, role, onBack, devices, setDevices, patients, sent, onSend, onUpdatePatient, toast }) {
   const [tab, setTab] = useState("measure");
   const [gtype, setGtype] = useState("chart");
   const [eyeF, setEyeF] = useState("both");
@@ -1905,6 +2061,7 @@ function PatientDetail({ p, role, onBack, devices, setDevices, patients, sent, o
   const [from, setFrom] = useState(RANGE_FROM_DEFAULT);
   const [to, setTo] = useState(RANGE_TO_DEFAULT);
   const [excluded, setExcluded] = useState({});
+  const [modal, setModal] = useState(null);
   const perm = CAN[role];
   const pts = period === "custom" ? trendDataRange(from, to) : trendData(period);
   const gmeta = GRAPH_TYPES.find((g) => g.id === gtype);
@@ -1936,8 +2093,8 @@ function PatientDetail({ p, role, onBack, devices, setDevices, patients, sent, o
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {perm.editTarget && <button className="cursor-pointer" style={{ border: `1.5px solid ${C.primary}`, background: "#fff", color: C.primary, borderRadius: 9, padding: "7px 12px", fontSize: 12, fontWeight: 700, fontFamily: FONT }}>목표 안압 변경</button>}
-          <button className="cursor-pointer flex items-center gap-1.5" style={{ border: "none", background: C.primary, color: "#fff", borderRadius: 9, padding: "8px 13px", fontSize: 12, fontWeight: 800, fontFamily: FONT }}><FileText size={13} /> 보고서</button>
+          {perm.editTarget && <button onClick={() => setModal("target")} className="cursor-pointer" style={{ border: `1.5px solid ${C.primary}`, background: "#fff", color: C.primary, borderRadius: 9, padding: "7px 12px", fontSize: 12, fontWeight: 700, fontFamily: FONT }}>목표 안압 변경</button>}
+          <button onClick={() => setModal("report")} className="cursor-pointer flex items-center gap-1.5" style={{ border: "none", background: C.primary, color: "#fff", borderRadius: 9, padding: "8px 13px", fontSize: 12, fontWeight: 800, fontFamily: FONT }}><FileText size={13} /> 보고서</button>
         </div>
       </div>
 
@@ -1994,6 +2151,15 @@ function PatientDetail({ p, role, onBack, devices, setDevices, patients, sent, o
 
       {tab === "device" && (
         <DeviceTab p={p} role={role} devices={devices} setDevices={setDevices} myDev={myDev} devSt={devSt} sent={sent} onSend={onSend} />
+      )}
+
+      {modal === "target" && (
+        <TargetModal p={p} onClose={() => setModal(null)}
+          onSave={(v) => { onUpdatePatient && onUpdatePatient(p.id, { targetOD: v.targetOD, targetOS: v.targetOS });
+            toast && toast(`${p.name}님 목표 안압을 OD ${v.targetOD} / OS ${v.targetOS} mmHg로 변경했습니다.`); setModal(null); }} />
+      )}
+      {modal === "report" && (
+        <ReportModal p={p} from={period === "custom" ? from : RANGE_FROM_DEFAULT} to={period === "custom" ? to : RANGE_TO_DEFAULT} onClose={() => setModal(null)} />
       )}
 
       {tab === "profile" && (
@@ -2128,7 +2294,7 @@ function NotifCenter({ alerts, read, setRead, sent, onSend, onExtend, onReturn, 
 /* ============================================================
    ★ 알림 스케줄러 · 발송 감사 로그
    ============================================================ */
-function NotifyPage({ role, cfg, setCfg, log, alerts, lastRun, onRunBatch }) {
+function NotifyPage({ role, cfg, setCfg, log, alerts, lastRun, lastResult, onRunBatch }) {
   const [sub, setSub] = useState("sched");
   const canEdit = CAN[role].notifyEdit;
   const canRun = CAN[role].runBatch;
@@ -2225,15 +2391,30 @@ function NotifyPage({ role, cfg, setCfg, log, alerts, lastRun, onRunBatch }) {
             </div>
 
             <div className="flex items-center gap-2" style={{ padding: "12px 17px", borderTop: `1px solid ${C.line}` }}>
-              <button onClick={onRunBatch} disabled={!canRun || !alerts.length} className="cursor-pointer flex items-center gap-1.5"
+              <button onClick={() => { onRunBatch(); setSub("sched"); }} disabled={!canRun || !alerts.length} className="cursor-pointer flex items-center gap-1.5"
                 style={{ border: "none", borderRadius: 10, padding: "9px 15px", fontSize: 12.5, fontWeight: 800, fontFamily: FONT, background: canRun && alerts.length ? C.primary : C.mintDeep, color: canRun && alerts.length ? "#fff" : C.sub }}>
                 <Play size={13} /> 지금 배치 실행
               </button>
               <span style={{ fontSize: 10.5, color: C.sub }}>
-                {canRun ? "예약 시각을 기다리지 않고 대상 전체에 즉시 발송합니다. 결과는 감사 로그에 기록됩니다."
-                        : "배치 수동 실행은 의사·관리자 권한입니다."}
+                {!canRun ? "배치 수동 실행은 의사·관리자 권한입니다."
+                  : !alerts.length ? "현재 발송 대상이 없습니다."
+                  : `대상 ${alerts.length}건에 즉시 발송합니다.`}
               </span>
             </div>
+
+            {lastResult && (
+              <div className="flex items-center gap-3" style={{ padding: "12px 17px", borderTop: `1px solid ${C.line}`, background: C.lowSoft }}>
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 32, height: 32, borderRadius: 10, background: "#fff", color: C.low }}><PackageCheck size={16} /></div>
+                <div className="flex-1">
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: C.ink }}>배치 실행 완료 · {lastResult.sent}건 발송</div>
+                  <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>{lastResult.at} · {lastResult.detail || "감사 로그에 기록되었습니다."}</div>
+                </div>
+                <button onClick={() => setSub("log")} className="cursor-pointer flex items-center gap-1"
+                  style={{ border: `1px solid ${C.low}45`, background: "#fff", color: C.low, borderRadius: 8, padding: "6px 11px", fontSize: 11, fontWeight: 800, fontFamily: FONT }}>
+                  <History size={11} /> 로그 보기
+                </button>
+              </div>
+            )}
           </Card>
 
           {/* 기본 설정 */}
@@ -2382,6 +2563,388 @@ function NotifyPage({ role, cfg, setCfg, log, alerts, lastRun, onRunBatch }) {
     </div>
   );
 }
+
+/* ---------- 목표 안압 변경 ---------- */
+function TargetModal({ p, onClose, onSave }) {
+  const [od, setOd] = useState(p.targetOD);
+  const [os, setOs] = useState(p.targetOS);
+  const [note, setNote] = useState("");
+  const dirty = od !== p.targetOD || os !== p.targetOS;
+  return (
+    <Modal title="목표 안압 변경" onClose={onClose}>
+      <div className="flex items-center gap-2.5" style={{ marginBottom: 14 }}>
+        <div className="flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, borderRadius: 12, background: C.mint, color: C.primary }}><Gauge size={19} /></div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.ink }}>{p.name}</div>
+          <div style={{ fontSize: 11.5, color: C.sub }}>{p.dx} · 현재 OD {p.targetOD} / OS {p.targetOS} mmHg</div>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2.5">
+        {[{ l: "우안 OD", v: od, set: setOd, c: C.od }, { l: "좌안 OS", v: os, set: setOs, c: C.os }].map((t) => (
+          <div key={t.l} className="flex items-center gap-3" style={{ border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 13px" }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: t.c, width: 62, flexShrink: 0 }}>{t.l}</span>
+            <div className="flex items-center gap-2" style={{ marginLeft: "auto" }}>
+              <button onClick={() => t.set(Math.max(8, t.v - 1))} className="cursor-pointer" style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, width: 30, height: 30, fontSize: 17, fontWeight: 800, fontFamily: FONT, lineHeight: 1 }}>−</button>
+              <input type="number" min={8} max={30} value={t.v} onChange={(e) => { const n = Number(e.target.value); if (!isNaN(n)) t.set(Math.min(30, Math.max(8, n))); }}
+                style={{ width: 52, textAlign: "center", border: "none", outline: "none", fontSize: 19, fontWeight: 800, color: C.ink, fontFamily: FONT, background: "transparent" }} />
+              <button onClick={() => t.set(Math.min(30, t.v + 1))} className="cursor-pointer" style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 8, width: 30, height: 30, fontSize: 17, fontWeight: 800, fontFamily: FONT, lineHeight: 1 }}>＋</button>
+              <span style={{ fontSize: 11, color: C.sub, width: 34, flexShrink: 0 }}>mmHg</span>
+            </div>
+          </div>
+        ))}
+        <Field label="변경 사유 (선택)"><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="예: 시야검사 진행 소견으로 하향 조정" style={inpSm} /></Field>
+        <div style={{ fontSize: 10.5, color: C.sub, lineHeight: 1.5 }}>
+          저장하면 환자 앱의 게이지·추세 목표선·초과 알림에 즉시 반영되고, 변경 이력이 기록됩니다.
+        </div>
+        <div className="flex gap-2.5" style={{ marginTop: 2 }}>
+          <button onClick={onClose} className="cursor-pointer" style={{ flex: 1, border: `1.5px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, fontFamily: FONT }}>취소</button>
+          <button onClick={() => dirty && onSave({ targetOD: od, targetOS: os, note })} disabled={!dirty} className="cursor-pointer"
+            style={{ flex: 2, border: "none", background: dirty ? C.primary : C.mintDeep, color: "#fff", borderRadius: 10, padding: "11px 0", fontSize: 13.5, fontWeight: 800, fontFamily: FONT }}>변경 저장</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- 진료 보고서 생성 ---------- */
+/* ---------- 보고서 데이터 구성 · HTML/TEXT 렌더 ---------- */
+const REPORT_SECTIONS = [
+  { id: "iop", t: "안압 측정 요약 · 그래프", on: true },
+  { id: "trend", t: "일자별 안압 추이", on: true },
+  { id: "hist", t: "측정 이력 상세", on: true },
+  { id: "tod", t: "시간대별 안압 프로파일", on: false },
+  { id: "device", t: "기기 대여·반납 이력", on: false },
+];
+function buildReportData(p, from, to, sec, gtype) {
+  const pts = trendDataRange(from, to);
+  const mean = (a) => (a.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : 0);
+  const blocks = [];
+
+  if (sec.includes("iop")) {
+    const odAvg = mean(pts.map((x) => x.odAvg)), osAvg = mean(pts.map((x) => x.osAvg));
+    const peak = Math.max(...pts.map((x) => x.odMax));
+    const overDays = pts.filter((x) => x.odAvg > p.targetOD).length;
+    const flucAvg = mean(pts.map((x) => x.fluc));
+    blocks.push({ h: "1. 안압 측정 요약", kv: [
+      ["측정 기간", `${from} ~ ${to}`],
+      ["총 측정 횟수", `${pts.reduce((a, x) => a + x.cnt, 0)}회`],
+      ["우안(OD) 평균", `${odAvg} mmHg (목표 ${p.targetOD})`],
+      ["좌안(OS) 평균", `${osAvg} mmHg (목표 ${p.targetOS})`],
+      ["기간 최고 안압", `${peak.toFixed(1)} mmHg`],
+      ["목표 초과일", `${overDays}일 / ${pts.length}일 (${Math.round((overDays / pts.length) * 100)}%)`],
+      ["평균 일중 변동폭", `${flucAvg} mmHg (2 미만 안정 · 5 이상 주의)`],
+      ["그래프 형식", (GRAPH_TYPES.find((g) => g.id === gtype) || {}).ko],
+    ]});
+  }
+  if (sec.includes("trend")) {
+    blocks.push({ h: "2. 일자별 안압 추이", table: {
+      head: ["일자", "우안 평균", "우안 최소~최대", "좌안 평균", "좌안 최소~최대", "측정 횟수", "일중 변동"],
+      rows: pts.map((x) => [x.d, x.odAvg, `${x.odMin} ~ ${x.odMax}`, x.osAvg, `${x.osMin} ~ ${x.osMax}`, `${x.cnt}회`, `${x.fluc}`]),
+    }});
+  }
+  if (sec.includes("hist")) {
+    blocks.push({ h: "3. 측정 이력 상세", table: {
+      head: ["측정 시각", "기기", "측정 눈", "IOP(OD)", "품질", "IOP(OS)", "품질", "기록"],
+      rows: MEAS_ROWS.map((r) => [r.at, r.dev, r.eye, r.od == null ? "–" : r.od.toFixed(1), r.qod, r.os == null ? "–" : r.os.toFixed(1), r.qos, r.src]),
+    }});
+  }
+  if (sec.includes("tod")) {
+    blocks.push({ h: "4. 시간대별 안압 프로파일", table: {
+      head: ["시간대", "구간", "우안 평균", "좌안 평균", "측정 횟수"],
+      rows: TOD_PROFILE.map((t) => [t.k, t.range, t.od, t.os, `${t.n}회`]),
+      },
+      note: "진료실 측정으로 놓치기 쉬운 야간·기상 시 최고 안압을 확인하는 자료입니다.",
+    });
+  }
+  if (sec.includes("device")) {
+    const dev = DEVICES_INIT.find((d) => d.serial === p.serial);
+    blocks.push({ h: "5. 기기 대여 · 반납 이력", table: {
+      head: ["항목", "내용"],
+      rows: [["기기 시리얼", p.serial || "-"], ["소유 구분", dev ? (dev.owner === "기관" ? "병원 대여" : "개인 소유") : "-"],
+             ["사용 기간", p.period || "-"], ["현재 상태", deviceState(dev).label]],
+    }});
+  }
+  return {
+    title: "녹내장 안압관리 진료 보고서",
+    org: "씨엔브이 안과 · 안압케어 CLINIC",
+    patient: [["환자명", p.name], ["환자 ID", p.id], ["성별 · 생년월일", `${p.gender} · ${p.birth || "-"}`],
+              ["진단명", p.dx], ["목표 안압", `OD ${p.targetOD} / OS ${p.targetOS} mmHg`], ["대상 기간", `${from} ~ ${to}`]],
+    issuedAt: `${isoDate(new Date())} ${nowHM()}`,
+    blocks,
+  };
+}
+function reportHtml(d) {
+  const esc = (v) => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const kv = (rows) => `<table class="kv">${rows.map((r) => `<tr><th>${esc(r[0])}</th><td>${esc(r[1])}</td></tr>`).join("")}</table>`;
+  const tbl = (t) => `<table class="d"><thead><tr>${t.head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>`
+    + `<tbody>${t.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const body = d.blocks.map((b) => `<section><h2>${esc(b.h)}</h2>`
+    + (b.kv ? kv(b.kv) : "")
+    + (b.table ? tbl(b.table) : "")
+    + (b.list ? `<ol class="cs">${b.list.map((x) => `<li>${esc(x).replace(/\n/g, "<br>")}</li>`).join("")}</ol>` : "")
+    + (b.note ? `<p class="note">${esc(b.note)}</p>` : "") + `</section>`).join("");
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<title>${esc(d.title)} - ${esc(d.patient[0][1])}</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#0A2A31;margin:0;padding:28px 30px;background:#fff;font-size:12px;line-height:1.6}
+header{border-bottom:2px solid #0E5563;padding-bottom:12px;margin-bottom:16px}
+h1{font-size:19px;margin:0 0 4px;color:#0E5563}
+.org{font-size:11px;color:#5E7A7C}
+.issued{font-size:10px;color:#8AA0A1;margin-top:6px}
+h2{font-size:13px;margin:20px 0 8px;color:#0A2A31;border-left:4px solid #3EA6A6;padding-left:8px}
+table{width:100%;border-collapse:collapse;margin-bottom:6px}
+.kv th{width:130px;text-align:left;background:#F3F7F6;color:#5E7A7C;font-weight:700;padding:6px 10px;border:1px solid #E2EAE9;font-size:11px}
+.kv td{padding:6px 10px;border:1px solid #E2EAE9;font-size:11.5px}
+.d th{background:#0E5563;color:#fff;font-size:10.5px;padding:6px 8px;border:1px solid #0E5563;text-align:left}
+.d td{padding:5px 8px;border:1px solid #E2EAE9;font-size:11px}
+.d tbody tr:nth-child(even){background:#F8FBFA}
+.cs{padding-left:18px;font-size:11.5px}
+.cs li{margin-bottom:8px}
+.note{font-size:10.5px;color:#5E7A7C;background:#F3F7F6;padding:8px 10px;border-radius:6px;margin-top:4px}
+footer{margin-top:26px;padding-top:12px;border-top:1px solid #E2EAE9;font-size:10px;color:#8AA0A1;line-height:1.7}
+@media print{body{padding:0}section{page-break-inside:avoid}}
+</style></head><body>
+<header><h1>${esc(d.title)}</h1><div class="org">${esc(d.org)}</div><div class="issued">발행 ${esc(d.issuedAt)}</div></header>
+<section><h2>환자 정보</h2>${kv(d.patient)}</section>
+${body}
+<footer>본 보고서는 기록된 측정·점안 데이터를 정리한 자료이며 진단·처방 판단을 포함하지 않습니다.<br>
+임상적 판단은 의료진의 소견과 함께 이루어져야 합니다. · C&amp;V Tech 안압케어</footer>
+</body></html>`;
+}
+function reportText(d) {
+  const line = "=".repeat(56);
+  const kv = (rows) => rows.map((r) => `  ${String(r[0]).padEnd(16, " ")}: ${r[1]}`).join("\n");
+  const tbl = (t) => [t.head.join(" | "), "-".repeat(56), ...t.rows.map((r) => r.join(" | "))].join("\n");
+  const body = d.blocks.map((b) => [`\n[${b.h}]`, b.kv ? kv(b.kv) : "", b.table ? tbl(b.table) : "",
+    b.list ? b.list.join("\n") : "", b.note ? `  * ${b.note}` : ""].filter(Boolean).join("\n")).join("\n");
+  return [line, `  ${d.title}`, `  ${d.org}`, `  발행 ${d.issuedAt}`, line,
+    "\n[환자 정보]", kv(d.patient), body, "\n" + line,
+    "본 보고서는 기록된 측정·점안 데이터를 정리한 자료이며 진단·처방 판단을 포함하지 않습니다.", line].join("\n");
+}
+function downloadBlob(text, filename, mime) {
+  try {
+    const blob = new Blob(["\uFEFF" + text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    return true;
+  } catch (e) { return false; }
+}
+
+function ReportModal({ p, from, to, onClose }) {
+  const [sec, setSec] = useState(REPORT_SECTIONS.filter((x) => x.on).map((x) => x.id));
+  const [gtype, setGtype] = useState("chart");
+  const [stage, setStage] = useState("form");        // form | making | done
+  const [fmt, setFmt] = useState("pdf");
+  const [preview, setPreview] = useState(false);
+  const [msg, setMsg] = useState("");
+  const frame = useRef(null);
+  const toggle = (id) => setSec((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]));
+  const make = () => { setStage("making"); setTimeout(() => setStage("done"), 1400); };
+
+  const data = useMemo(() => (stage === "done" ? buildReportData(p, from, to, sec, gtype) : null), [stage, p, from, to, sec, gtype]);
+  const html = data ? reportHtml(data) : "";
+  const base = `안압케어_진료보고서_${p.name}_${from}_${to}`;
+  const flash = (t) => { setMsg(t); setTimeout(() => setMsg(""), 2600); };
+
+  const doPrint = () => {
+    try { frame.current.contentWindow.focus(); frame.current.contentWindow.print(); }
+    catch (e) { flash("이 환경에서는 인쇄 창을 열 수 없습니다. HTML로 내려받아 브라우저에서 인쇄하세요."); }
+  };
+  const doDownload = () => {
+    if (fmt === "html") {
+      flash(downloadBlob(html, `${base}.html`, "text/html;charset=utf-8") ? "HTML 파일을 내려받았습니다." : "다운로드가 차단되었습니다. 미리보기에서 내용을 복사하세요.");
+    } else if (fmt === "txt") {
+      flash(downloadBlob(reportText(data), `${base}.txt`, "text/plain;charset=utf-8") ? "텍스트 파일을 내려받았습니다." : "다운로드가 차단되었습니다.");
+    } else {
+      if (!preview) setPreview(true);
+      setTimeout(doPrint, 400);
+      flash("인쇄 창에서 대상을 'PDF로 저장'으로 선택하세요.");
+    }
+  };
+
+  const FMTS = [
+    { id: "pdf", t: "PDF", d: "인쇄 → PDF로 저장", icon: FileText },
+    { id: "html", t: "HTML", d: "웹 문서 파일", icon: Globe },
+    { id: "txt", t: "TEXT", d: "텍스트 파일", icon: ListChecks },
+  ];
+
+  return (
+    <Modal title="진료 보고서 생성" onClose={onClose} wide>
+      {stage === "done" ? (
+        <div className="flex flex-col" style={{ paddingTop: 4 }}>
+          <div className="flex flex-col items-center">
+            <div className="flex items-center justify-center" style={{ width: 52, height: 52, borderRadius: 999, background: C.lowSoft, color: C.low, marginBottom: 11 }}><FileText size={25} /></div>
+            <div style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>보고서가 생성되었습니다</div>
+            <div style={{ fontSize: 12, color: C.sub, marginTop: 5, textAlign: "center", lineHeight: 1.55 }}>
+              {p.name} · {from} ~ {to}<br />선택 항목 {sec.length}개 · {(GRAPH_TYPES.find((g) => g.id === gtype) || {}).ko}
+            </div>
+          </div>
+
+          {/* 미리보기 */}
+          {preview && (
+            <div style={{ marginTop: 14, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
+              <div className="flex items-center justify-between" style={{ padding: "8px 12px", background: C.bg, borderBottom: `1px solid ${C.line}` }}>
+                <span className="flex items-center gap-1.5" style={{ fontSize: 11.5, fontWeight: 800, color: C.primary }}><Eye size={12} /> HTML 미리보기</span>
+                <div className="flex items-center gap-2">
+                  <span onClick={doPrint} className="cursor-pointer flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, color: C.sub }}><FileText size={11} /> 인쇄</span>
+                  <span onClick={() => setPreview(false)} className="cursor-pointer" style={{ fontSize: 11, fontWeight: 700, color: C.sub }}>닫기</span>
+                </div>
+              </div>
+              <iframe ref={frame} title="report-preview" srcDoc={html} style={{ width: "100%", height: 360, border: "none", background: "#fff" }} />
+            </div>
+          )}
+
+          {/* 다운로드 형식 */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: C.sub, marginBottom: 7 }}>다운로드 형식</div>
+            <div className="flex" style={{ gap: 7 }}>
+              {FMTS.map((f) => {
+                const on = fmt === f.id;
+                return (
+                  <div key={f.id} onClick={() => setFmt(f.id)} className="cursor-pointer flex flex-col items-center"
+                    style={{ flex: 1, border: `1.5px solid ${on ? C.primary : C.line}`, background: on ? C.mint : "#fff", borderRadius: 12, padding: "11px 6px" }}>
+                    <f.icon size={16} color={on ? C.primary : C.sub} />
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: on ? C.primary : C.ink, marginTop: 4 }}>{f.t}</div>
+                    <div style={{ fontSize: 9.5, color: C.sub, marginTop: 1 }}>{f.d}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {msg && (
+            <div className="flex items-center gap-2" style={{ marginTop: 11, background: C.mint, borderRadius: 10, padding: "9px 12px", fontSize: 11.5, color: C.ink, fontWeight: 600 }}>
+              <Info size={13} color={C.primary} className="flex-shrink-0" /> {msg}
+            </div>
+          )}
+
+          <div className="flex gap-2.5" style={{ marginTop: 14 }}>
+            <button onClick={() => setPreview((v) => !v)} className="cursor-pointer flex items-center justify-center gap-1.5"
+              style={{ flex: 1, border: `1.5px solid ${C.primary}`, background: "#fff", color: C.primary, borderRadius: 11, padding: "11px 0", fontSize: 13, fontWeight: 800, fontFamily: FONT }}>
+              <Eye size={14} /> {preview ? "미리보기 닫기" : "미리보기"}
+            </button>
+            <button onClick={doDownload} className="cursor-pointer flex items-center justify-center gap-1.5"
+              style={{ flex: 2, border: "none", background: C.primary, color: "#fff", borderRadius: 11, padding: "11px 0", fontSize: 13.5, fontWeight: 800, fontFamily: FONT }}>
+              <Download size={14} /> {FMTS.find((f) => f.id === fmt).t}로 다운로드
+            </button>
+          </div>
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 9, lineHeight: 1.5, textAlign: "center" }}>
+            파일명 {base}.{fmt === "txt" ? "txt" : fmt} · 운영 환경에서는 서버가 PDF를 생성해 15분간 유효한 링크를 제공합니다.
+          </div>
+        </div>
+      ) : stage === "making" ? (
+        <div className="flex flex-col items-center" style={{ padding: "40px 0" }}>
+          <RefreshCw size={30} color={C.primary} className="animate-spin" />
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: C.ink, marginTop: 14 }}>보고서를 만들고 있습니다…</div>
+          <div style={{ fontSize: 11.5, color: C.sub, marginTop: 4 }}>측정·점안 데이터를 집계하는 중</div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2.5" style={{ padding: "10px 12px", borderRadius: 11, background: C.bg }}>
+            <User size={16} color={C.primary} className="flex-shrink-0" />
+            <div className="flex-1">
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.ink }}>{p.name} <span style={{ fontSize: 11, color: C.sub, fontWeight: 500 }}>{p.id} · {p.dx}</span></div>
+              <div style={{ fontSize: 11, color: C.sub, marginTop: 1 }}>대상 기간 {from} ~ {to}</div>
+            </div>
+          </div>
+          <Field label="포함할 항목">
+            <div className="grid grid-cols-2" style={{ gap: 7 }}>
+              {REPORT_SECTIONS.map((x) => {
+                const on = sec.includes(x.id);
+                return (
+                  <div key={x.id} onClick={() => toggle(x.id)} className="cursor-pointer flex items-center gap-2"
+                    style={{ border: `1.5px solid ${on ? C.primary : C.line}`, background: on ? C.mint : "#fff", borderRadius: 10, padding: "9px 11px" }}>
+                    <span className="flex items-center justify-center flex-shrink-0" style={{ width: 17, height: 17, borderRadius: 5, border: `1.5px solid ${on ? C.primary : C.line}`, background: on ? C.primary : "#fff" }}>{on && <Check size={11} color="#fff" strokeWidth={3.5} />}</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: C.ink }}>{x.t}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Field>
+          <Field label="안압 그래프 형식"><GraphTypeSwitch value={gtype} onChange={setGtype} compact /></Field>
+          <div style={{ fontSize: 10.5, color: C.sub, lineHeight: 1.5, background: C.bg, borderRadius: 10, padding: "9px 11px" }}>
+            보고서에는 진단·처방 판단이 포함되지 않으며, 기록된 측정·점안 데이터를 정리해 제공합니다.
+          </div>
+          <div className="flex gap-2.5" style={{ marginTop: 2 }}>
+            <button onClick={onClose} className="cursor-pointer" style={{ flex: 1, border: `1.5px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, fontFamily: FONT }}>취소</button>
+            <button onClick={make} disabled={!sec.length} className="cursor-pointer flex items-center justify-center gap-1.5"
+              style={{ flex: 2, border: "none", background: sec.length ? C.primary : C.mintDeep, color: "#fff", borderRadius: 10, padding: "11px 0", fontSize: 13.5, fontWeight: 800, fontFamily: FONT }}><FileText size={14} /> 보고서 생성</button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ---------- 장치 등록 ---------- */
+function AddDeviceForm({ devices, onCancel, onSubmit }) {
+  const [f, setF] = useState({ name: "", serial: "", model: "CVT200", owner: "org", usage: "home", battery: 100, firmware: "1.4.2" });
+  const set = (k, v) => setF((o) => ({ ...o, [k]: v }));
+  const serialOK = /^CVT2H?-[0-9A-Z]{6,10}$/.test(f.serial.trim());
+  const dup = devices.some((d) => d.serial === f.serial.trim());
+  const ok = f.name.trim() && serialOK && !dup;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-2.5">
+        <Field label="장치명" req><input value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="예: 홈 대여기 #5" style={inpSm} /></Field>
+        <Field label="모델">
+          <select value={f.model} onChange={(e) => set("model", e.target.value)} style={inpSm}>
+            <option value="CVT200">CVT200</option>
+            <option value="CVT200 HOME">CVT200 HOME</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="시리얼 번호" req>
+        <input value={f.serial} onChange={(e) => set("serial", e.target.value.toUpperCase())} placeholder="CVT2H-0000AA00"
+          style={{ ...inpSm, fontFamily: "monospace", letterSpacing: "0.04em", borderColor: f.serial ? (ok ? C.low : C.high) : C.line }} />
+        <div style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.45, color: !f.serial ? C.sub : dup ? C.high : serialOK ? C.low : C.high }}>
+          {!f.serial ? "기기 뒷면 라벨의 시리얼 번호를 입력하세요."
+            : dup ? "이미 등록된 시리얼 번호입니다."
+            : serialOK ? "✓ 등록 가능한 형식입니다." : "형식이 올바르지 않습니다. 예: CVT2H-2033AA11"}
+        </div>
+      </Field>
+      <div className="flex gap-2.5">
+        <Field label="소유 구분" req>
+          <div className="flex" style={{ gap: 5 }}>
+            {[{ id: "org", t: "기관 자산" }, { id: "patient", t: "환자 개인" }].map((o) => (
+              <button key={o.id} onClick={() => set("owner", o.id)} className="cursor-pointer"
+                style={{ flex: 1, border: `1.5px solid ${f.owner === o.id ? C.primary : C.line}`, background: f.owner === o.id ? C.mint : "#fff", color: f.owner === o.id ? C.primary : C.sub, borderRadius: 9, padding: "9px 0", fontSize: 12, fontWeight: 700, fontFamily: FONT }}>{o.t}</button>
+            ))}
+          </div>
+        </Field>
+        <Field label="용도" req>
+          <div className="flex" style={{ gap: 5 }}>
+            {[{ id: "clinic", t: "원내용" }, { id: "home", t: "가정 대여용" }].map((o) => (
+              <button key={o.id} onClick={() => set("usage", o.id)} className="cursor-pointer"
+                style={{ flex: 1, border: `1.5px solid ${f.usage === o.id ? C.primary : C.line}`, background: f.usage === o.id ? C.mint : "#fff", color: f.usage === o.id ? C.primary : C.sub, borderRadius: 9, padding: "9px 0", fontSize: 12, fontWeight: 700, fontFamily: FONT }}>{o.t}</button>
+            ))}
+          </div>
+        </Field>
+      </div>
+      <div className="flex gap-2.5">
+        <Field label="배터리 (%)"><input type="number" min={0} max={100} value={f.battery} onChange={(e) => set("battery", Math.max(0, Math.min(100, +e.target.value)))} style={inpSm} /></Field>
+        <Field label="펌웨어"><input value={f.firmware} onChange={(e) => set("firmware", e.target.value)} style={inpSm} /></Field>
+      </div>
+      <div style={{ fontSize: 10.5, color: C.sub, lineHeight: 1.5, background: C.bg, borderRadius: 9, padding: "9px 11px" }}>
+        기관 자산 · 가정 대여용으로 등록하면 곧바로 <b style={{ color: C.low }}>대여 가능</b> 상태가 되어 환자에게 배정할 수 있습니다.
+      </div>
+      <div className="flex gap-2.5" style={{ marginTop: 2 }}>
+        <button onClick={onCancel} className="cursor-pointer" style={{ flex: 1, border: `1.5px solid ${C.line}`, background: "#fff", color: C.sub, borderRadius: 10, padding: "11px 0", fontSize: 13, fontWeight: 700, fontFamily: FONT }}>취소</button>
+        <button onClick={() => ok && onSubmit({
+          serial: f.serial.trim(), name: f.name.trim(), type: f.model, model: f.model,
+          owner: f.owner === "org" ? "기관" : "개인", use: f.usage, org: "씨엔브이 안과",
+          assignedTo: null, rentFrom: null, rentTo: null, linkedAt: null,
+          battery: f.battery, fw: f.firmware, active: true,
+        })} disabled={!ok} className="cursor-pointer"
+          style={{ flex: 2, border: "none", background: ok ? C.primary : C.mintDeep, color: "#fff", borderRadius: 10, padding: "11px 0", fontSize: 13.5, fontWeight: 800, fontFamily: FONT }}>장치 등록</button>
+      </div>
+    </div>
+  );
+}
+
 
 /* ---------- 환자 상세 · 기기 관리 탭 ---------- */
 function DeviceTab({ p, role, devices, setDevices, myDev, devSt, sent = {}, onSend }) {
@@ -2722,10 +3285,11 @@ function AddUserForm({ onCancel, onSubmit }) {
 }
 
 /* ---------- 장치 · 권한 ---------- */
-function DevicesPage({ role, devices, setDevices, patients }) {
+function DevicesPage({ role, devices, setDevices, patients, toast }) {
   const [q, setQ] = useState("");
   const [filt, setFilt] = useState("all");
   const [sort, setSort] = useState({ k: "name", dir: "asc" });
+  const [add, setAdd] = useState(false);
   const pName = (id) => (patients.find((x) => x.id === id) || {}).name || "-";
 
   const kpi = useMemo(() => {
@@ -2789,8 +3353,15 @@ function DevicesPage({ role, devices, setDevices, patients }) {
             ))}
           </div>
         </div>
-        <button className="cursor-pointer flex items-center gap-1.5" style={{ border: "none", borderRadius: 10, padding: "9px 15px", background: C.primary, color: "#fff", fontSize: 12.5, fontWeight: 800, fontFamily: FONT }}><Plus size={14} /> 장치 등록</button>
+        <button onClick={() => setAdd(true)} className="cursor-pointer flex items-center gap-1.5" style={{ border: "none", borderRadius: 10, padding: "9px 15px", background: C.primary, color: "#fff", fontSize: 12.5, fontWeight: 800, fontFamily: FONT }}><Plus size={14} /> 장치 등록</button>
       </div>
+
+      {add && (
+        <Modal title="장치 등록" onClose={() => setAdd(false)} wide>
+          <AddDeviceForm devices={devices} onCancel={() => setAdd(false)}
+            onSubmit={(d) => { setDevices((ds) => [...ds, d]); setAdd(false); toast && toast(`${d.name} 장치를 등록했습니다.`); }} />
+        </Modal>
+      )}
 
       <div className="grid" style={{ gridTemplateColumns: COLS, fontSize: 10.5, padding: "0 6px 8px", borderBottom: `1px solid ${C.line}`, gap: 6 }}>
         <SortHead label="장치명" k="name" sort={sort} setSort={setSort} />
@@ -3063,6 +3634,7 @@ function ClinicianWeb() {
   const [cfg, setCfg] = useState(NOTIFY_CFG_INIT);
   const [audit, setAudit] = useState(AUDIT_INIT);
   const [lastRun, setLastRun] = useState("2026-07-03 09:00");
+  const [lastResult, setLastResult] = useState(null);
   const [toast, setToast] = useState("");
   const [open, setOpen] = useState(null);
 
@@ -3103,11 +3675,16 @@ function ClinicianWeb() {
   };
   /* 배치 실행: 대상 전체에 단계별 채널로 일괄 발송 */
   const runBatch = () => {
-    let n = 0;
-    alerts.forEach((x) => { if (writeLog(x.dev, x.a, "자동", "스케줄러")) n += 1; });
-    setLastRun(stampNow());
-    setReadAlerts([]);
+    let n = 0; const names = [];
+    alerts.forEach((x) => { if (writeLog(x.dev, x.a, "자동", "스케줄러")) { n += 1; if (x.pt) names.push(`${x.pt.name}(${x.a.title})`); } });
+    const at = stampNow();
+    setLastRun(at); setReadAlerts([]);
+    setLastResult({ sent: n, at, detail: n ? names.join(" · ") : "설정된 발송 채널이 없어 실제 발송은 없었습니다." });
     flashToast(n ? `배치 실행 완료 · ${n}건 발송, 감사 로그에 기록했습니다.` : "발송 대상이 없습니다.");
+  };
+  const updatePatient = (pid, patch) => {
+    setPatients((ps) => ps.map((x) => (x.id === pid ? { ...x, ...patch } : x)));
+    setOpen((o) => (o && o.id === pid ? { ...o, ...patch } : o));
   };
   const extendRent = (serial, days) => {
     setDevices((ds) => ds.map((d) => {
@@ -3212,10 +3789,10 @@ function ClinicianWeb() {
       </div>
 
       {nav === "patients" && (open
-        ? <PatientDetail p={open} role={role} onBack={() => setOpen(null)} devices={devices} setDevices={setDevices} patients={patients} sent={sentLog} onSend={sendNotice} />
+        ? <PatientDetail p={open} role={role} onBack={() => setOpen(null)} devices={devices} setDevices={setDevices} patients={patients} sent={sentLog} onSend={sendNotice} onUpdatePatient={updatePatient} toast={flashToast} />
         : <PatientsPage role={role} patients={patients} setPatients={setPatients} onOpen={setOpen} devices={devices} setDevices={setDevices} alerts={alerts} />)}
-      {nav === "devices" && <DevicesPage role={role} devices={devices} setDevices={setDevices} patients={patients} />}
-      {nav === "notif" && <NotifyPage role={role} cfg={cfg} setCfg={setCfg} log={audit} alerts={alerts} lastRun={lastRun} onRunBatch={runBatch} />}
+      {nav === "devices" && <DevicesPage role={role} devices={devices} setDevices={setDevices} patients={patients} toast={flashToast} />}
+      {nav === "notif" && <NotifyPage role={role} cfg={cfg} setCfg={setCfg} log={audit} alerts={alerts} lastRun={lastRun} lastResult={lastResult} onRunBatch={runBatch} />}
       {nav === "users" && <UsersPage role={role} users={users} setUsers={setUsers} />}
       {nav === "perm" && <PermissionPage role={role} />}
 
@@ -3235,7 +3812,7 @@ function ClinicianWeb() {
       {modal === "password" && <PasswordModal onClose={() => setModal(null)} />}
 
       {toast && (
-        <div className="flex items-center gap-2" style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: 22, background: C.ink, color: "#fff", borderRadius: 12, padding: "11px 18px", fontSize: 12.5, fontWeight: 700, boxShadow: "0 12px 30px -8px rgba(8,52,62,.5)", zIndex: 50 }}>
+        <div className="flex items-center gap-2" style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", top: 70, background: C.ink, color: "#fff", borderRadius: 12, padding: "11px 18px", fontSize: 12.5, fontWeight: 700, boxShadow: "0 12px 30px -8px rgba(8,52,62,.5)", zIndex: 50 }}>
           <PackageCheck size={15} color={C.mintDeep} /> {toast}
         </div>
       )}
@@ -3256,7 +3833,7 @@ export default function App() {
           <div style={{ fontSize: 11, letterSpacing: "0.16em", color: C.primary, fontWeight: 800 }}>C&V TECH · CVT200 COMPANION</div>
           <h1 style={{ fontSize: 25, fontWeight: 800, color: C.ink, margin: "5px 0 3px" }}>안압케어 IOP v2 — 안압관리 전용</h1>
           <div style={{ fontSize: 13, color: C.sub, textAlign: "center", maxWidth: 620, lineHeight: 1.5 }}>
-            좌·우안 선택 측정, 역할별 권한 관리와 고객 DB, 그래프 형식 선택(Chart · Scatter · Diurnal)을 갖춘 안압관리 단독 버전입니다.
+            기기 신호 기반 좌·우안 자동 측정, 그래프 형식 선택(Chart · Scatter · Diurnal), 역할별 권한과 고객 DB, 기기 대여·반납 알림 자동화를 갖춘 안압관리 단독 버전입니다.
           </div>
           <div className="flex items-center" style={{ marginTop: 16, background: "#fff", borderRadius: 999, padding: 4, border: `1px solid ${C.line}` }}>
             {[{ id: "patient", label: "환자 앱", icon: Smartphone }, { id: "clinician", label: "의료진 웹", icon: Stethoscope }].map((v) => {
@@ -3269,7 +3846,7 @@ export default function App() {
         <div className="flex justify-center">{view === "patient" ? <PatientApp /> : <ClinicianWeb />}</div>
 
         <div className="flex items-center justify-center gap-2 flex-wrap" style={{ marginTop: 26, fontSize: 12, color: C.sub }}>
-          <Flow icon={Eye} t="좌·우안 선택 측정" /><Send size={13} color={C.mintDeep} />
+          <Flow icon={Eye} t="좌·우안 자동 측정" /><Send size={13} color={C.mintDeep} />
           <Flow icon={Activity} t="Chart · Scatter · Diurnal" /><Send size={13} color={C.mintDeep} />
           <Flow icon={Users} t="고객 DB · 권한 관리" /><Send size={13} color={C.mintDeep} />
           <Flow icon={Stethoscope} t="의료진 웹" strong />
